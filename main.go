@@ -78,11 +78,30 @@ func main() {
 		pv := 1
 		for i := 0; i < numIteracoes; i++ {
 			// Construir a URL com base no mês, ano e login do usuário
+			var tabela string
+
 			url := ""
+
 			if anoInt >= 2000 {
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, pv)
+				if anoInt >= 2005 || (anoInt == 2005 && mesInt >= 2) {
+					// Construir URL com tabela "atual"
+					tabela = "atual"
+				} else {
+					// Construir URL com tabela "hist"
+					tabela = "hist"
+				}
+				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
+
 			} else {
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, pv)
+				if anoInt >= 2005 || (anoInt == 2005 && mesInt >= 2) {
+					// Construir URL com tabela "atual"
+					tabela = "atual"
+				} else {
+					// Construir URL com tabela "hist"
+					tabela = "hist"
+				}
+
+				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
 			}
 
 			// Navegar para a página correspondente
@@ -106,14 +125,32 @@ func main() {
 					// Encontrou o erro, alterar o valor de pv na URL e repetir a navegação
 					pv++
 					if anoInt >= 2000 {
-						url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt, mesInt, usuario, pv)
+						if anoInt >= 2005 || (anoInt == 2005 && mesInt >= 2) {
+							// Construir URL com tabela "atual"
+							tabela = "atual"
+						} else {
+							// Construir URL com tabela "hist"
+							tabela = "hist"
+						}
+						url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
+
 					} else {
-						url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt, mesInt, usuario, pv)
+						if anoInt >= 2005 || (anoInt == 2005 && mesInt >= 2) {
+							// Construir URL com tabela "atual"
+							tabela = "atual"
+						} else {
+							// Construir URL com tabela "hist"
+							tabela = "hist"
+						}
+
+						url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
 					}
+
 				} else {
 					// Não encontrou o erro, sair do loop
 					break
 				}
+
 			}
 
 			// Aguardar 2 segundos após encontrar a página correta
@@ -157,8 +194,10 @@ func main() {
 			if mesInt == 1 {
 				mesInt = 12
 				anoInt--
+				pv = 1
 			} else {
 				mesInt--
+				pv = 1
 			}
 		}
 

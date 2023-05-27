@@ -80,9 +80,9 @@ func main() {
 			// Construir a URL com base no mês, ano e login do usuário
 			url := ""
 			if anoInt >= 2000 {
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt, mesInt, usuario, pv)
+				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, pv)
 			} else {
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt, mesInt, usuario, pv)
+				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=hist&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, pv)
 			}
 
 			// Navegar para a página correspondente

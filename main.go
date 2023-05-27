@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -74,13 +75,37 @@ func main() {
 
 		// Gerar os arquivos a partir da data fornecida
 		var pdfs []string
+		pv := 1
 		for i := 0; i < numIteracoes; i++ {
 			// Construir a URL com base no mês, ano e login do usuário
-			url := fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=atual&sit=1&dt_sit=&pv=01&opcao_pagto=visualizar&tipo_usuario=rs&opcao=abertura&acao=&ver_aviso=true&modo=imprimir", anoInt, mesInt, usuario)
-			// Navegar para a página correspondente
-			page.Navigate(url)
+			url := fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=atual&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=abertura&acao=&ver_aviso=true&modo=imprimir", anoInt, mesInt, usuario, pv)
 
-			// Aguardar 2 segundos
+			// Navegar para a página correspondente
+			for {
+				page.Navigate(url)
+
+				// Aguardar o carregamento da página
+				page.MustWaitLoad()
+
+				// Obter o conteúdo HTML da página
+				html, err := page.HTML()
+				if err != nil {
+					dialog.ShowError(err, window)
+					return
+				}
+
+				// Verificar se o conteúdo HTML contém a sequência de texto do erro
+				if strings.Contains(html, "500 - Internal server error") {
+					// Encontrou o erro, alterar o valor de pv na URL e repetir a navegação
+					pv++
+					url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=atual&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=abertura&acao=&ver_aviso=true&modo=imprimir", anoInt, mesInt, usuario, pv)
+				} else {
+					// Não encontrou o erro, sair do loop
+					break
+				}
+			}
+
+			// Aguardar 2 segundos após encontrar a página correta
 			time.Sleep(2 * time.Second)
 
 			// Salvar a página como PDF
@@ -188,8 +213,7 @@ func mergePDFs(pdftkPath string, pdfs []string, outputFile string) error {
 	args = append(args, "cat", "output", outputFile)
 
 	// Executar o comando no CMD usando o pdftk
-	cmd := exec.Command("cmd.exe", "/c", pdftkPath)
-	cmd.Args = append(cmd.Args, args...)
+	cmd := exec.Command(pdftkPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

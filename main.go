@@ -2,275 +2,160 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/widget"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
 func main() {
-	a := app.New()
-	window := a.NewWindow("Folha de Pagamento")
+	// Obter os valores dos campos de entrada
+	usuario := ""
+	senha := ""
+	startMonth := 4
+	startYear := 2005
+	numIteracoes := 7
 
-	// Campos de entrada
-	entryUsuario := widget.NewEntry()
-	entrySenha := widget.NewPasswordEntry()
-	entryMes := widget.NewEntry()
-	entryAno := widget.NewEntry()
-	entryNumIteracoes := widget.NewEntry()
+	date := time.Date(startYear, time.Month(startMonth), 1, 0, 0, 0, 0, time.UTC)
 
-	// Botão de execução
-	button := widget.NewButton("Executar", func() {
-		// Obter os valores dos campos de entrada
-		usuario := entryUsuario.Text
-		senha := entrySenha.Text
-		mes := entryMes.Text
-		ano := entryAno.Text
-		numIteracoesStr := entryNumIteracoes.Text
+	// Novo navegador
+	browser := rod.New().NoDefaultDevice().MustConnect()
 
-		// Converter o número de iterações para o tipo int
-		numIteracoes, err := strconv.Atoi(numIteracoesStr)
-		if err != nil {
-			dialog.ShowError(err, window)
-			return
-		}
+	// Fecha o navegador quando a rotina finalizar (defer)
+	defer browser.Close()
 
-		// Inicializar o navegador e abrir a página de login
-		page := rod.New().NoDefaultDevice().MustConnect().MustPage("https://www.fazenda.sp.gov.br/folha/nova_folha/acessar_dce.asp?menu=dem&user=rs").MustWaitLoad()
+	// Inicializar o navegador e abrir a página de login
+	page := browser.MustPage("https://www.fazenda.sp.gov.br/folha/nova_folha/acessar_dce.asp?menu=dem&user=rs").MustWaitLoad()
 
-		// Preencher os campos de login
-		page.MustElement("input[name='txt_logindce']").MustInput(usuario)
-		page.MustElement("input[name='txt_senhadce']").MustInput(senha)
+	// Preencher os campos de login
+	page.MustElement("input[name='txt_logindce']").MustInput(usuario)
+	page.MustElement("input[name='txt_senhadce']").MustInput(senha)
 
-		// Clicar no botão de login
-		page.MustElement("input[type='submit'][name='enviar']").MustClick()
+	// Clicar no botão de login
+	page.MustElement("input[type='submit'][name='enviar']").MustClick()
 
-		// Aguardar a página carregar
+	// Aguardar a página carregar
+	page.MustWaitLoad()
+
+	// Clicar no botão OK do popup de abertura
+	page.MustElement("input[type='button'][value='OK']").MustClick()
+
+	// Gerar os arquivos a partir da data fornecida
+	var pdfs []string
+
+	for i := 0; i < numIteracoes; i++ {
+		dataAtual := date.Format("01/2006")
+
+		fmt.Printf("Start %s\n", dataAtual)
+
+		url := fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_listar.asp?opcao=&acao=&ano=%v", date.Year())
+
+		fmt.Printf("Loading page: %s\n", url)
+
+		// Navegar para a página correspondente
+		page.Navigate(url)
+
+		// Aguardar o carregamento da página
 		page.MustWaitLoad()
 
-		// Clicar no botão OK do popup de abertura
-		page.MustElement("input[type='button'][value='OK']").MustClick()
+		// flag utilizada indicar se essa iteração deve ser ignorada (Exemplo: mês sem dado ou somente com décimo terceiro)
+		ignorar_interacao := true
 
-		// Converter o mês e o ano para o tipo int
-		mesInt, err := strconv.Atoi(mes)
-		if err != nil {
-			dialog.ShowError(err, window)
-			return
-		}
-		anoInt, err := strconv.Atoi(ano)
-		if err != nil {
-			dialog.ShowError(err, window)
-			return
-		}
-
-		// Gerar os arquivos a partir da data fornecida
-		var pdfs []string
-		pv := 1
-		for i := 0; i < numIteracoes; i++ {
-			// Construir a URL com base no mês, ano e login do usuário
-			var tabela string
-
-			url := ""
-
-			if anoInt >= 2000 {
-				if anoInt >= 2005 && mesInt >= 2 {
-					// Construir URL com tabela "atual"
-					tabela = "atual"
-				} else {
-					// Construir URL com tabela "hist"
-					tabela = "hist"
-				}
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
-
-			} else {
-				if anoInt >= 2005 && mesInt >= 2 {
-					// Construir URL com tabela "atual"
-					tabela = "atual"
-				} else {
-					// Construir URL com tabela "hist"
-					tabela = "hist"
-				}
-
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
-			}
-
-			// Navegar para a página correspondente
-			for {
-				page.Navigate(url)
-				// Imprimir a URL gerada
-				fmt.Println("URL gerada:", url)
-
-				// Aguardar o carregamento da página
-				page.MustWaitLoad()
-
-				// Obter o conteúdo HTML da página
-				html, err := page.HTML()
-				if err != nil {
-					dialog.ShowError(err, window)
-					return
-				}
-
-				// Verificar se o conteúdo HTML contém a sequência de texto do erro
-				if strings.Contains(html, "500 - Internal server error") {
-					// Encontrou o erro, alterar o valor de pv na URL e repetir a navegação
-					pv++
-					if anoInt >= 2000 {
-						if anoInt >= 2005 && mesInt >= 2 {
-							// Construir URL com tabela "atual"
-							tabela = "atual"
-						} else {
-							// Construir URL com tabela "hist"
-							tabela = "hist"
-						}
-						url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=1%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
-
-					} else {
-						if anoInt >= 2005 && mesInt >= 2 {
-							// Construir URL com tabela "atual"
-							tabela = "atual"
-						} else {
-							// Construir URL com tabela "hist"
-							tabela = "hist"
-						}
-
-						url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?sq=1&tp=0&dt=%02d%02d&rb=0&rs=%s&nro=0&tabela=%s&sit=1&dt_sit=&pv=%02d&opcao_pagto=visualizar&tipo_usuario=rs&opcao=listar&acao=&ver_aviso=true&modo=imprimir&modo=imprimir", anoInt%100, mesInt, usuario, tabela, pv)
-					}
-
-				} else {
-					// Não encontrou o erro, sair do loop
-					break
-				}
-
-			}
-
-			// Aguardar 2 segundos após encontrar a página correta
-			time.Sleep(2 * time.Second)
-
-			// Salvar a página como PDF
-			pdf, err := page.PDF(&proto.PagePrintToPDF{})
+		// Captura todos os links da página
+		for _, link := range page.MustElements("a") {
+			txt, err := link.Text()
 			if err != nil {
-				dialog.ShowError(err, window)
-				return
+				panic(fmt.Sprint("Erro ao obter o texto do elemento:", err))
 			}
 
-			// Ler o conteúdo do PDF
-			content, err := ioutil.ReadAll(pdf)
+			if !strings.Contains(txt, dataAtual) {
+				continue
+			}
+
+			href, err := link.Attribute("href")
 			if err != nil {
-				dialog.ShowError(err, window)
-				return
+				panic(fmt.Sprint("Erro ao obter o atributo href do elemento:", err))
 			}
 
-			// Formatar o nome do arquivo
-			nomeArquivo := fmt.Sprintf("%02d-%02d.pdf", anoInt, mesInt)
-
-			// Definir o caminho completo para salvar o arquivo dentro da pasta do usuário
-			caminhoArquivo := fmt.Sprintf("%s/%s", usuario, nomeArquivo)
-
-			// Escrever o conteúdo do PDF em um arquivo com o novo nome e caminho
-			err = os.Mkdir(usuario, 0755) // Criar a pasta com permissões 0755 (rwxr-xr-x)
-			if err != nil && !os.IsExist(err) {
-				dialog.ShowError(err, window)
-				return
+			// É décimo terceiro, ignora
+			if strings.Contains(*href, "&tp=8&") {
+				continue
 			}
 
-			err = ioutil.WriteFile(caminhoArquivo, content, 0644)
+			fmt.Println("Link encontrado:", *href)
+
+			new_link := strings.Split(*href, "?")[1]
+			new_link = "https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?" + new_link + "&modo=imprimir"
+
+			fmt.Println("Novo link:", new_link)
+
+			// Navegar para a página do link e espera carregar
+			new_page := browser.MustPage(new_link).MustWaitLoad()
+
+			// Cria o pdf a partir da página
+			pdf, err := new_page.PDF(&proto.PagePrintToPDF{})
 			if err != nil {
-				dialog.ShowError(err, window)
-				return
+				panic(fmt.Sprint("Erro ao salvar o pdf:", err))
 			}
-			pdfs = append(pdfs, caminhoArquivo)
 
-			// Decrementar o mês e o ano
-			if mesInt == 1 {
-				mesInt = 12
-				anoInt--
-				pv = 1
-			} else {
-				mesInt--
-				pv = 1
+			// Lê o conteúdo do PDF
+			content, err := io.ReadAll(pdf)
+			if err != nil {
+				panic(fmt.Sprint("Erro ao ler conteúdo do pdf:", err))
 			}
+
+			pdf_filename := fmt.Sprintf("./%s.pdf", date.Format("01-2006"))
+
+			// Cria o arquivo
+			new_file, err := os.Create(pdf_filename)
+			if err != nil {
+				panic(fmt.Sprint("Erro ao criar o arquivo:", err))
+			}
+
+			// Escreve os dados da página no pdf
+			_, err = new_file.Write(content)
+			if err != nil {
+				panic(fmt.Sprint("Erro ao salvar o pdf:", err))
+			}
+
+			// Sincroniza os dados com o diso e fecha o arquivo
+			new_file.Sync()
+			new_file.Close()
+
+			pdfs = append(pdfs, pdf_filename)
+
+			ignorar_interacao = false
 		}
 
-		// Caminho completo para o executável do PDFtk
-		pdftkPath := "C:\\Program Files (x86)\\PDFtk\\bin\\pdftk.exe"
-
-		// Definir o nome do arquivo mesclado usando o nome de login
-		nomeArquivoMesclado := fmt.Sprintf("%s.pdf", usuario)
-
-		// Definir o caminho completo para salvar o arquivo mesclado dentro da pasta do usuário
-		caminhoArquivoMesclado := fmt.Sprintf("%s/%s", usuario, nomeArquivoMesclado)
-
-		// Realizar a mesclagem dos PDFs usando o PDFtk
-		err = mergePDFs(pdftkPath, pdfs, caminhoArquivoMesclado)
-		if err != nil {
-			dialog.ShowError(err, window)
-			return
+		if ignorar_interacao {
+			i--
 		}
 
-		dialog.ShowInformation("Sucesso", "Arquivos PDF mesclados com sucesso.", window)
-
-		// Excluir os arquivos unitários
-		for _, arquivo := range pdfs {
-			err := os.Remove(arquivo)
-			if err != nil {
-				fmt.Printf("Erro ao excluir o arquivo %s: %s\n", arquivo, err)
-			}
-		}
-
-		dialog.ShowInformation("Sucesso", "Arquivos unitários excluídos com sucesso.", window)
-	})
-
-	// Layout dos campos de entrada
-	form := &widget.Form{
-		Items: []*widget.FormItem{
-			{Text: "Usuário:", Widget: entryUsuario},
-			{Text: "Senha:", Widget: entrySenha},
-			{Text: "Mês:", Widget: entryMes},
-			{Text: "Ano:", Widget: entryAno},
-			{Text: "Número de meses retroativo:", Widget: entryNumIteracoes},
-		},
-		OnSubmit: func() {
-			button.OnTapped()
-		},
+		date = date.AddDate(0, -1, 0)
+		fmt.Println()
 	}
 
-	// Layout principal
-	content := fyne.NewContainerWithLayout(
-		layout.NewVBoxLayout(),
-		form,
-		button,
-	)
+	merge_all_pdfs(usuario, pdfs)
 
-	window.SetContent(content)
-	window.ShowAndRun()
+	delete_all_files(pdfs)
 }
 
-// Função para mesclar os arquivos PDF usando o PDFtk
-func mergePDFs(pdftkPath string, pdfs []string, outputFile string) error {
-	// Montar o comando para mesclar os PDFs
-	args := []string{}
-	args = append(args, pdfs...)
-	args = append(args, "cat", "output", outputFile)
-
-	// Executar o comando no CMD usando o pdftk
-	cmd := exec.Command(pdftkPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
+func merge_all_pdfs(filename string, files []string) {
+	err := api.MergeCreateFile(files, fmt.Sprintf("%s.pdf", filename), nil)
 	if err != nil {
-		return err
+		panic(fmt.Sprint("Erro ao juntar os pdfs:", err))
 	}
+}
 
-	return nil
+func delete_all_files(files []string) {
+	for _, arquivo := range files {
+		err := os.Remove(arquivo)
+		if err != nil {
+			panic(fmt.Sprint("Erro ao excluir um arquivo:", err))
+		}
+	}
 }

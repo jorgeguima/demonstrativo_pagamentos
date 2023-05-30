@@ -63,140 +63,119 @@ func main() {
 		page.MustElement("input[type='button'][value='OK']").MustClick()
 
 		// Gerar os arquivos a partir da data fornecida
-		var pdfs []string
+		pdfs := []string{}
 
-		// flag para indicar se possui mais páginas
-		has_more_pages := false
+		// todos os links encontrados
+		all_links := []string{}
 
-		// flag para indicar que já está na segunda página
-		second_page := false
+		// para controlar se houve troca de ano, se houver carrega todos os links do novo ano
+		load_all_links := true
 
-		// contador de interações desde a última mudança de ano
-		interactions_for_second_page_reset := 0
-
+		// Na primeira fase, ele vai interar para pegar todos os links de todos os anos dentro do range das iterações
 		for i := 0; i < numIteracoes; i++ {
 			dataAtual := date.Format("01/2006")
 
 			fmt.Printf("Start %s\n", dataAtual)
 
-			var url string
+			if load_all_links {
+				fmt.Println("Loading all links")
 
-			if !second_page {
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_listar.asp?opcao=listar&acao=visualizar&ano=%v", date.Year())
-			} else {
-				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_listar.asp?opcao=listar&acao=visualizar&page=2&ano=%v", date.Year())
-			}
+				// carrega todos os links da página 1 desse ano
+				all_links = append(all_links, all_links_from_year_and_page(page, date.Year(), 1)...)
 
-			fmt.Printf("Loading page: %s\n", url)
+				// carrega todos os links da página 2 desse ano (se houver, senão ele vai recarregar a página 1, vamos incluir todos os links mesmo assim, ao final iremos higienizar os duplicados)
+				all_links = append(all_links, all_links_from_year_and_page(page, date.Year(), 2)...)
 
-			// Navegar para a página correspondente
-			page.Navigate(url)
-
-			// Aguardar o carregamento da página
-			page.MustWaitLoad()
-
-			// flag utilizada indicar se essa iteração deve ser ignorada (Exemplo: mês sem dado ou somente com décimo terceiro)
-			ignorar_interacao := true
-
-			// carrega todos o html da página
-			html_content, _ := page.HTML()
-
-			// verificar se existe algum link com indicando a segunda página
-			if strings.Contains(html_content, "&amp;page=2&amp;") {
-				// flag para indicar se existe uma segunda página
-				has_more_pages = true
-			}
-
-			// Captura todos os links da página
-			for _, link := range page.MustElements("a") {
-				txt, err := link.Text()
-				if err != nil {
-					panic(fmt.Sprint("Erro ao obter o texto do elemento:", err))
-				}
-
-				if !strings.Contains(txt, dataAtual) {
-					continue
-				}
-
-				href, err := link.Attribute("href")
-				if err != nil {
-					panic(fmt.Sprint("Erro ao obter o atributo href do elemento:", err))
-				}
-
-				// É décimo terceiro, ignora
-				if strings.Contains(*href, "&tp=8&") || strings.Contains(*href, "&tp=5&") {
-					continue
-				}
-
-				fmt.Println("Link encontrado:", *href)
-
-				new_link := strings.Split(*href, "?")[1]
-				new_link = "https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?" + new_link + "&modo=imprimir"
-
-				fmt.Println("Novo link:", new_link)
-
-				// Navegar para a página do link e espera carregar
-				new_page := browser.MustPage(new_link).MustWaitLoad()
-
-				// Cria o pdf a partir da página
-				pdf, err := new_page.PDF(&proto.PagePrintToPDF{})
-				if err != nil {
-					panic(fmt.Sprint("Erro ao salvar o pdf:", err))
-				}
-
-				// Lê o conteúdo do PDF
-				content, err := io.ReadAll(pdf)
-				if err != nil {
-					panic(fmt.Sprint("Erro ao ler conteúdo do pdf:", err))
-				}
-
-				pdf_filename := fmt.Sprintf("./%s.pdf", date.Format("2006-01"))
-
-				// Cria o arquivo
-				new_file, err := os.Create(pdf_filename)
-				if err != nil {
-					panic(fmt.Sprint("Erro ao criar o arquivo:", err))
-				}
-
-				// Escreve os dados da página no pdf
-				_, err = new_file.Write(content)
-				if err != nil {
-					panic(fmt.Sprint("Erro ao salvar o pdf:", err))
-				}
-
-				// Sincroniza os dados com o diso e fecha o arquivo
-				new_file.Sync()
-				new_file.Close()
-
-				pdfs = append(pdfs, pdf_filename)
-
-				ignorar_interacao = false
-			}
-
-			if ignorar_interacao {
-				i--
+				load_all_links = false
 			}
 
 			oldYear := date.Year()
-			interactions_for_second_page_reset++
 
 			date = date.AddDate(0, -1, 0)
 
-			// Se houve mudança de ano e houver mais páginas, volta um ano e ativa a flag de segunda página para mudar a url principal
 			if date.Year() != oldYear {
-				if has_more_pages && !second_page {
-					second_page = true
-					date = date.AddDate(0, interactions_for_second_page_reset, 0)
-				} else if second_page {
-					second_page = false
-				}
-
-				interactions_for_second_page_reset = 0
+				load_all_links = true
 			}
 
-			has_more_pages = false
-
 			fmt.Println()
+		}
+
+		// Terminada a primeira fase, vamos higienizar possíveis links duplicados e ordenar
+		new_links := []string{}
+		for _, link := range all_links {
+			found := false
+
+			for _, new_link := range new_links {
+				if link == new_link {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				new_links = append(new_links, link)
+			}
+		}
+
+		sort.Strings(new_links)
+
+		// Reinicia a data e refaz o processo de iterar, porém agora usando os links já prontos
+		date = time.Date(startYear, time.Month(startMonth), 1, 0, 0, 0, 0, time.UTC)
+
+		// Nessa fase, ele vai interar para pegar todos os links de todos os anos dentro do range das iterações
+		for i := 0; i < numIteracoes; i++ {
+			dataAtual := date.Format("01/2006")
+
+			fmt.Printf("Start %s\n", dataAtual)
+
+			// para caso tenha mais de um arquivo dentro do mesmo mês, um não substituir o outro
+			count := 0
+
+			// procura os links com a data atual
+			for _, link := range new_links {
+				if strings.Contains(link, date.Format("0601")) {
+					count++
+
+					fmt.Println("Found link:", link)
+
+					// Navegar para a página do link e espera carregar
+					new_page := browser.MustPage(link).MustWaitLoad()
+
+					// Cria o pdf a partir da página
+					pdf, err := new_page.PDF(&proto.PagePrintToPDF{})
+					if err != nil {
+						panic(fmt.Sprint("Erro ao salvar o pdf:", err))
+					}
+
+					// Lê o conteúdo do PDF
+					content, err := io.ReadAll(pdf)
+					if err != nil {
+						panic(fmt.Sprint("Erro ao ler conteúdo do pdf:", err))
+					}
+
+					pdf_filename := fmt.Sprintf("./%s-%v.pdf", date.Format("2006-01"), count)
+
+					// Cria o arquivo
+					new_file, err := os.Create(pdf_filename)
+					if err != nil {
+						panic(fmt.Sprint("Erro ao criar o arquivo:", err))
+					}
+
+					// Escreve os dados da página no pdf
+					_, err = new_file.Write(content)
+					if err != nil {
+						panic(fmt.Sprint("Erro ao salvar o pdf:", err))
+					}
+
+					// Sincroniza os dados com o diso e fecha o arquivo
+					new_file.Sync()
+					new_file.Close()
+
+					pdfs = append(pdfs, pdf_filename)
+				}
+			}
+
+			date = date.AddDate(0, -1, 0)
 		}
 
 		// ordena os pdfs em ordem crescente
@@ -230,6 +209,34 @@ func main() {
 
 	window.SetContent(content)
 	window.ShowAndRun()
+}
+
+func all_links_from_year_and_page(page *rod.Page, year, pagination int) []string {
+	result := []string{}
+
+	url := fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_listar.asp?opcao=listar&acao=visualizar&ano=%v&page=%v", year, pagination)
+
+	// Navegar para a página correspondente
+	page.Navigate(url)
+
+	// Aguardar o carregamento da página
+	page.MustWaitLoad()
+
+	// Captura todos os links da página
+	for _, link := range page.MustElements("a") {
+		href, err := link.Attribute("href")
+		if err != nil {
+			panic(fmt.Sprint("Erro ao obter o atributo href do elemento:", err))
+		}
+
+		// Se é folha normal, registra
+		if strings.Contains(*href, "&tp=0&") {
+			// já prepara o link no novo formato
+			result = append(result, "https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_imp.asp?"+strings.Split(*href, "?")[1]+"&modo=imprimir")
+		}
+	}
+
+	return result
 }
 
 func merge_all_pdfs(filename string, files []string) {

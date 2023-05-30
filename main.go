@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,12 +65,27 @@ func main() {
 		// Gerar os arquivos a partir da data fornecida
 		var pdfs []string
 
+		// flag para indicar se possui mais páginas
+		has_more_pages := false
+
+		// flag para indicar que já está na segunda página
+		second_page := false
+
+		// contador de interações desde a última mudança de ano
+		interactions_for_second_page_reset := 0
+
 		for i := 0; i < numIteracoes; i++ {
 			dataAtual := date.Format("01/2006")
 
 			fmt.Printf("Start %s\n", dataAtual)
 
-			url := fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_listar.asp?opcao=&acao=&ano=%v", date.Year())
+			var url string
+
+			if !second_page {
+				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_listar.asp?opcao=listar&acao=visualizar&ano=%v", date.Year())
+			} else {
+				url = fmt.Sprintf("https://www.fazenda.sp.gov.br/folha/nova_folha/dem_pagto_listar.asp?opcao=listar&acao=visualizar&page=2&ano=%v", date.Year())
+			}
 
 			fmt.Printf("Loading page: %s\n", url)
 
@@ -81,6 +97,15 @@ func main() {
 
 			// flag utilizada indicar se essa iteração deve ser ignorada (Exemplo: mês sem dado ou somente com décimo terceiro)
 			ignorar_interacao := true
+
+			// carrega todos o html da página
+			html_content, _ := page.HTML()
+
+			// verificar se existe algum link com indicando a segunda página
+			if strings.Contains(html_content, "&amp;page=2&amp;") {
+				// flag para indicar se existe uma segunda página
+				has_more_pages = true
+			}
 
 			// Captura todos os links da página
 			for _, link := range page.MustElements("a") {
@@ -99,7 +124,7 @@ func main() {
 				}
 
 				// É décimo terceiro, ignora
-				if strings.Contains(*href, "&tp=8&") {
+				if strings.Contains(*href, "&tp=8&") || strings.Contains(*href, "&tp=5&") {
 					continue
 				}
 
@@ -125,7 +150,7 @@ func main() {
 					panic(fmt.Sprint("Erro ao ler conteúdo do pdf:", err))
 				}
 
-				pdf_filename := fmt.Sprintf("./%s.pdf", date.Format("01-2006"))
+				pdf_filename := fmt.Sprintf("./%s.pdf", date.Format("2006-01"))
 
 				// Cria o arquivo
 				new_file, err := os.Create(pdf_filename)
@@ -152,9 +177,30 @@ func main() {
 				i--
 			}
 
+			oldYear := date.Year()
+			interactions_for_second_page_reset++
+
 			date = date.AddDate(0, -1, 0)
+
+			// Se houve mudança de ano e houver mais páginas, volta um ano e ativa a flag de segunda página para mudar a url principal
+			if date.Year() != oldYear {
+				if has_more_pages && !second_page {
+					second_page = true
+					date = date.AddDate(0, interactions_for_second_page_reset, 0)
+				} else if second_page {
+					second_page = false
+				}
+
+				interactions_for_second_page_reset = 0
+			}
+
+			has_more_pages = false
+
 			fmt.Println()
 		}
+
+		// ordena os pdfs em ordem crescente
+		sort.Strings(pdfs)
 
 		merge_all_pdfs(usuario, pdfs)
 
@@ -197,7 +243,7 @@ func delete_all_files(files []string) {
 	for _, arquivo := range files {
 		err := os.Remove(arquivo)
 		if err != nil {
-			panic(fmt.Sprint("Erro ao excluir um arquivo:", err))
+			fmt.Printf("Erro ao excluir um arquivo: %s\n", err)
 		}
 	}
 }
